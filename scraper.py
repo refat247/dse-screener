@@ -83,6 +83,64 @@ def get_circuit_limit(symbol):
     return CIRCUIT_LIMITS.get(get_sector(symbol), 10.0)
 
 # ───────────────────────────────────────────────
+# DSEX INDEX SCRAPER
+# ───────────────────────────────────────────────
+def scrape_dsex_index():
+    """Scrape DSEX, DS30, DSES index values"""
+    try:
+        url = "https://dsebd.org/"
+        resp = requests.get(url, headers=HEADERS, timeout=15, verify=False)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        indices = {'DSEX': 0, 'DS30': 0, 'DSES': 0, 'DSEX_change': 0, 'DS30_change': 0, 'DSES_change': 0}
+        # Try multiple selectors to find index values
+        for text in soup.find_all(string=True):
+            t = text.strip()
+            if 'DSEX' in t and any(c.isdigit() for c in t):
+                try:
+                    # Look for patterns like "DSEX 5,516.82" or similar
+                    parts = t.replace(',', '').split()
+                    for i, p in enumerate(parts):
+                        if p == 'DSEX' and i+1 < len(parts):
+                            indices['DSEX'] = float(parts[i+1])
+                        if p == 'DS30' and i+1 < len(parts):
+                            indices['DS30'] = float(parts[i+1])
+                        if p == 'DSES' and i+1 < len(parts):
+                            indices['DSES'] = float(parts[i+1])
+                except:
+                    continue
+        return indices
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] WARN index scrape failed: {e}")
+        return {'DSEX': 0, 'DS30': 0, 'DSES': 0, 'DSEX_change': 0, 'DS30_change': 0, 'DSES_change': 0}
+
+# ───────────────────────────────────────────────
+# MARKET STATUS
+# ───────────────────────────────────────────────
+def get_market_status():
+    """Check if BD market is currently open"""
+    from datetime import datetime, timezone, timedelta
+    bd_time = datetime.now(timezone(timedelta(hours=6)))  # UTC+6
+    now = bd_time.strftime('%H:%M')
+    weekday = bd_time.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+    # BD market: Sun-Thu, 10:00 AM - 2:30 PM
+    is_trading_day = weekday in [6, 0, 1, 2, 3]  # Sun=6, Mon=0, Tue=1, Wed=2, Thu=3
+    is_market_hours = '10:00' <= now <= '14:30'
+    status = 'OPEN' if (is_trading_day and is_market_hours) else 'CLOSED'
+    next_open = None
+    if status == 'CLOSED':
+        if is_trading_day and now < '10:00':
+            next_open = bd_time.strftime('%Y-%m-%d') + ' 10:00'
+        else:
+            # Next trading day
+            days_to_add = 1
+            next_weekday = (weekday + 1) % 7
+            while next_weekday not in [6, 0, 1, 2, 3]:
+                days_to_add += 1
+                next_weekday = (next_weekday + 1) % 7
+            next_open = (bd_time + timedelta(days=days_to_add)).strftime('%Y-%m-%d') + ' 10:00'
+    return {'status': status, 'bd_time': bd_time.strftime('%Y-%m-%d %H:%M'), 'next_open': next_open}
+
+# ───────────────────────────────────────────────
 # MAIN SCRAPER
 # ───────────────────────────────────────────────
 def scrape_dse():
@@ -319,7 +377,7 @@ def compute_metrics(stock_data):
 # ───────────────────────────────────────────────
 # OUTPUT BUILDER
 # ───────────────────────────────────────────────
-def build_output(df, news, foreign, block_deals, top20):
+def build_output(df, news, foreign, block_deals, top20, indices, market_status):
     advancing = len(df[df['change_pct'] > 0])
     declining = len(df[df['change_pct'] < 0])
     unchanged = len(df[df['change_pct'] == 0])
@@ -338,6 +396,10 @@ def build_output(df, news, foreign, block_deals, top20):
     sector_perf.columns = ['change_pct', 'volume', 'value_mn', 'stock_count']
     sector_perf = sector_perf.sort_values('change_pct', ascending=False)
 
+    # Market breadth: advance-decline ratio
+    ad_ratio = round(advancing / declining, 2) if declining > 0 else float('inf')
+    ad_ratio = None if ad_ratio == float('inf') else ad_ratio
+
     output = {
         'meta': {
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -345,6 +407,7 @@ def build_output(df, news, foreign, block_deals, top20):
             'advancing': int(advancing),
             'declining': int(declining),
             'unchanged': int(unchanged),
+            'ad_ratio': ad_ratio,
             'total_volume': int(df['volume'].sum()),
             'total_value': round(df['value_mn'].sum(), 2),
             'top_gainer': {'symbol': top_gainer['symbol'], 'change_pct': round(top_gainer['change_pct'], 2), 'ltp': round(top_gainer['ltp'], 2)},
@@ -355,6 +418,8 @@ def build_output(df, news, foreign, block_deals, top20):
             'highest_momentum': {'symbol': highest_momentum['symbol'], 'momentum_score': round(highest_momentum['momentum_score'], 2)},
             'highest_spike': {'symbol': highest_spike['symbol'], 'volume_spike': round(highest_spike['volume_spike'], 2)} if highest_spike is not None else None,
             'near_circuit': near_circuit[['symbol', 'change_pct', 'circuit_proximity_pct']].to_dict('records'),
+            'indices': indices,
+            'market_status': market_status,
             'foreign': foreign,
             'block_deals': block_deals,
             'top20': top20,
@@ -403,10 +468,12 @@ def job():
     foreign = scrape_foreign_activity()
     block_deals = scrape_block_deals()
     top20 = scrape_top20()
+    indices = scrape_dsex_index()
+    market_status = get_market_status()
 
     if stock_data and len(stock_data) > 50:
         df = compute_metrics(stock_data)
-        output = build_output(df, news, foreign, block_deals, top20)
+        output = build_output(df, news, foreign, block_deals, top20, indices, market_status)
         with open(OUTPUT_FILE, 'w') as f:
             json.dump(clean_json(output), f, indent=2, allow_nan=False)
         archive_data(df)
@@ -418,6 +485,7 @@ def job():
         print(f"   🚀 Top Gainer: {output['meta']['top_gainer']['symbol']} (+{output['meta']['top_gainer']['change_pct']}%)")
         if output['meta']['highest_spike']:
             print(f"   💥 Volume Spike: {output['meta']['highest_spike']['symbol']} ({output['meta']['highest_spike']['volume_spike']}x avg)")
+        print(f"   📊 DSEX: {indices['DSEX']} | Market: {market_status['status']}")
     else:
         print("   ⚠️  Failed to scrape or insufficient data — keeping previous file")
 
