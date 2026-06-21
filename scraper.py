@@ -387,7 +387,7 @@ def archive_data(df):
     archive_file = os.path.join(archive_dir, f"{today}.json")
     archive = df[['symbol', 'ltp', 'volume', 'change_pct', 'value_mn']].to_dict('records')
     with open(archive_file, 'w') as f:
-        json.dump(clean_json(archive), f)
+        json.dump(clean_json(archive), f, allow_nan=False)
     print(f"   Archived to {archive_file}")
 
 # ───────────────────────────────────────────────
@@ -408,7 +408,7 @@ def job():
         df = compute_metrics(stock_data)
         output = build_output(df, news, foreign, block_deals, top20)
         with open(OUTPUT_FILE, 'w') as f:
-            json.dump(clean_json(output), f, indent=2)
+            json.dump(clean_json(output), f, indent=2, allow_nan=False)
         archive_data(df)
         print(f"   ✅ Saved {output['meta']['total_stocks']} stocks")
         print(f"   📰 News: {len(news)} items")
