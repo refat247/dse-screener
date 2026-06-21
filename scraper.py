@@ -246,6 +246,94 @@ def scrape_foreign_activity():
         return {'buy_value_mn': 0, 'sell_value_mn': 0, 'net_value_mn': 0, 'top_buy': [], 'top_sell': []}
 
 # ───────────────────────────────────────────────
+# IPO / AGM / DIVIDEND CALENDAR SCRAPER
+# ───────────────────────────────────────────────
+def scrape_ipo_agm():
+    """Scrape DSE upcoming IPOs, AGMs, dividends, rights issues"""
+    events = []
+    try:
+        # AGM notices
+        url = "https://dsebd.org/company_agm.php"
+        resp = requests.get(url, headers=HEADERS, timeout=15, verify=False)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        for row in soup.find_all('tr')[1:11]:
+            cols = row.find_all('td')
+            if len(cols) >= 3:
+                try:
+                    events.append({
+                        'date': cols[0].text.strip(),
+                        'symbol': cols[1].text.strip(),
+                        'title': cols[2].text.strip(),
+                        'type': 'AGM'
+                    })
+                except:
+                    continue
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] WARN AGM scrape failed: {e}")
+    
+    try:
+        # Dividend declarations
+        url = "https://dsebd.org/latest_news.php"
+        resp = requests.get(url, headers=HEADERS, timeout=15, verify=False)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        for row in soup.find_all('tr')[1:11]:
+            cols = row.find_all('td')
+            if len(cols) >= 3:
+                title = cols[1].text.strip().lower()
+                event_type = 'General'
+                if 'dividend' in title or 'cash' in title:
+                    event_type = 'Dividend'
+                elif 'right' in title or 'rights' in title:
+                    event_type = 'Rights'
+                elif 'ipo' in title:
+                    event_type = 'IPO'
+                elif 'bonus' in title:
+                    event_type = 'Bonus'
+                if event_type != 'General':
+                    try:
+                        events.append({
+                            'date': cols[0].text.strip(),
+                            'symbol': '',
+                            'title': cols[1].text.strip(),
+                            'type': event_type
+                        })
+                    except:
+                        continue
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S'))}] WARN dividend scrape failed: {e}")
+    
+    return sorted(events, key=lambda x: x['date'])[:15]
+
+# ───────────────────────────────────────────────
+# NEW HIGH / LOW TRACKER
+# ───────────────────────────────────────────────
+def compute_new_high_low(df):
+    """Flag stocks at new high/low from available data"""
+    df['is_new_high'] = df['ltp'] == df['high']
+    df['is_new_low'] = df['ltp'] == df['low']
+    # Distance from 52-week high (approximation using today's high)
+    df['dist_from_52w_high'] = (((df['ltp'] - df['high']) / df['high']) * 100).round(2)
+    df['dist_from_52w_low'] = (((df['ltp'] - df['low']) / df['low']) * 100).round(2)
+    return df
+
+# ───────────────────────────────────────────────
+# CORRELATION MATRIX
+# ───────────────────────────────────────────────
+def compute_correlation(df):
+    """Compute correlation between stocks' change_pct"""
+    try:
+        corr_data = df[['symbol', 'change_pct']].set_index('symbol').T
+        corr_matrix = corr_data.corr()
+        # Get top 5 correlations for each stock
+        top_corr = {}
+        for symbol in corr_matrix.columns:
+            row = corr_matrix[symbol].drop(symbol).sort_values(ascending=False).head(5)
+            top_corr[symbol] = [{'symbol': k, 'corr': round(v, 2)} for k, v in row.items()]
+        return top_corr
+    except:
+        return {}
+
+# ───────────────────────────────────────────────
 # BLOCK DEALS SCRAPER
 # ───────────────────────────────────────────────
 def scrape_block_deals():
@@ -372,12 +460,25 @@ def compute_metrics(stock_data):
     df = compute_gap(df)
     df = compute_volume_spike(df)
     df = compute_circuit_proximity(df)
+    df = compute_new_high_low(df)
+    return df
+
+# ───────────────────────────────────────────────
+# SUPPORT / RESISTANCE FROM AVAILABLE DATA
+# ───────────────────────────────────────────────
+def compute_support_resistance(df):
+    """Compute support/resistance from today's high/low/YCP"""
+    df['support_1'] = df['low'].round(2)
+    df['resistance_1'] = df['high'].round(2)
+    df['pivot'] = ((df['high'] + df['low'] + df['closep']) / 3).round(2)
+    df['support_2'] = (df['pivot'] - (df['high'] - df['low'])).round(2)
+    df['resistance_2'] = (df['pivot'] + (df['high'] - df['low'])).round(2)
     return df
 
 # ───────────────────────────────────────────────
 # OUTPUT BUILDER
 # ───────────────────────────────────────────────
-def build_output(df, news, foreign, block_deals, top20, indices, market_status):
+def build_output(df, news, foreign, block_deals, top20, indices, market_status, ipo_agm, correlation):
     advancing = len(df[df['change_pct'] > 0])
     declining = len(df[df['change_pct'] < 0])
     unchanged = len(df[df['change_pct'] == 0])
@@ -389,6 +490,8 @@ def build_output(df, news, foreign, block_deals, top20, indices, market_status):
     highest_momentum = df.loc[df['momentum_score'].idxmax()]
     highest_spike = df.loc[df['volume_spike'].idxmax()] if df['volume_spike'].notna().any() else None
     near_circuit = df[df['circuit_proximity_pct'].abs() >= 80].sort_values('circuit_proximity_pct', ascending=False).head(5)
+    new_highs = df[df['is_new_high'] == True]['symbol'].tolist()[:10]
+    new_lows = df[df['is_new_low'] == True]['symbol'].tolist()[:10]
 
     sector_perf = df.groupby('sector').agg({
         'change_pct': 'mean', 'volume': 'sum', 'value_mn': 'sum', 'ltp': 'count'
@@ -408,6 +511,8 @@ def build_output(df, news, foreign, block_deals, top20, indices, market_status):
             'declining': int(declining),
             'unchanged': int(unchanged),
             'ad_ratio': ad_ratio,
+            'new_highs': new_highs,
+            'new_lows': new_lows,
             'total_volume': int(df['volume'].sum()),
             'total_value': round(df['value_mn'].sum(), 2),
             'top_gainer': {'symbol': top_gainer['symbol'], 'change_pct': round(top_gainer['change_pct'], 2), 'ltp': round(top_gainer['ltp'], 2)},
@@ -423,7 +528,9 @@ def build_output(df, news, foreign, block_deals, top20, indices, market_status):
             'foreign': foreign,
             'block_deals': block_deals,
             'top20': top20,
-            'news': news
+            'news': news,
+            'ipo_agm': ipo_agm,
+            'correlation': correlation
         },
         'sector_performance': sector_perf.reset_index().to_dict('records'),
         'stocks': df.to_dict('records')
@@ -470,15 +577,19 @@ def job():
     top20 = scrape_top20()
     indices = scrape_dsex_index()
     market_status = get_market_status()
+    ipo_agm = scrape_ipo_agm()
 
     if stock_data and len(stock_data) > 50:
         df = compute_metrics(stock_data)
-        output = build_output(df, news, foreign, block_deals, top20, indices, market_status)
+        df = compute_support_resistance(df)
+        correlation = compute_correlation(df)
+        output = build_output(df, news, foreign, block_deals, top20, indices, market_status, ipo_agm, correlation)
         with open(OUTPUT_FILE, 'w') as f:
             json.dump(clean_json(output), f, indent=2, allow_nan=False)
         archive_data(df)
         print(f"   ✅ Saved {output['meta']['total_stocks']} stocks")
         print(f"   📰 News: {len(news)} items")
+        print(f"   📅 IPO/AGM: {len(ipo_agm)} events")
         print(f"   🌍 Foreign: Buy ৳{foreign['buy_value_mn']:.1f}M | Sell ৳{foreign['sell_value_mn']:.1f}M | Net ৳{foreign['net_value_mn']:.1f}M")
         print(f"   📦 Block Deals: {len(block_deals)} deals")
         print(f"   📈 Advancing: {output['meta']['advancing']} | 📉 Declining: {output['meta']['declining']}")
