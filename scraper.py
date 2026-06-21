@@ -10,6 +10,8 @@ from bs4 import BeautifulSoup
 import json
 import pandas as pd
 import numpy as np
+import schedule
+import time
 from datetime import datetime, timedelta
 import warnings
 import os
@@ -363,6 +365,18 @@ def build_output(df, news, foreign, block_deals, top20):
     }
     return output
 
+import math
+def clean_json(obj):
+    """Replace Infinity/NaN with None for valid JSON"""
+    if isinstance(obj, dict):
+        return {k: clean_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_json(v) for v in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    return obj
+
 # ───────────────────────────────────────────────
 # HISTORICAL ARCHIVE
 # ───────────────────────────────────────────────
@@ -373,7 +387,7 @@ def archive_data(df):
     archive_file = os.path.join(archive_dir, f"{today}.json")
     archive = df[['symbol', 'ltp', 'volume', 'change_pct', 'value_mn']].to_dict('records')
     with open(archive_file, 'w') as f:
-        json.dump(archive, f)
+        json.dump(clean_json(archive), f)
     print(f"   Archived to {archive_file}")
 
 # ───────────────────────────────────────────────
@@ -394,7 +408,7 @@ def job():
         df = compute_metrics(stock_data)
         output = build_output(df, news, foreign, block_deals, top20)
         with open(OUTPUT_FILE, 'w') as f:
-            json.dump(output, f, indent=2)
+            json.dump(clean_json(output), f, indent=2)
         archive_data(df)
         print(f"   ✅ Saved {output['meta']['total_stocks']} stocks")
         print(f"   📰 News: {len(news)} items")
@@ -420,7 +434,15 @@ def main():
     print("  Extras: News | Foreign | Block Deals | Top 20 | Volume Spike | Gap | Circuit")
     print("=" * 60)
     job()
-    print("\n✅ Scrape complete. Exiting.")
+    schedule.every(REFRESH_INTERVAL).minutes.do(job)
+    print("\n⏰ Running... Press Ctrl+C to stop")
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n🛑 Stopped by user")
+        sys.exit(0)
