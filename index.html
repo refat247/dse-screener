@@ -387,13 +387,69 @@ function detectSystemTheme(){if(window.matchMedia&&window.matchMedia('(prefers-c
 if(!localStorage.getItem('dse_theme'))detectSystemTheme();
 if(window.matchMedia){window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',e=>{if(!localStorage.getItem('dse_theme_manual'))document.body.setAttribute('data-theme',e.matches?'dark':'light');});}
 
-async function loadData(){try{const response=await fetch(DATA_URL+'?t='+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error('Network not OK');const data=await response.json();STOCK_DATA=data.stocks||[];SECTOR_DATA=data.sector_performance||[];META=data.meta||{};updateIndexBar();updateMarketBadge();updateBreadth();updateNewHighLow();updateMarketSummary();updateSectorHeatmap();updateNewsTicker();updateForeignBlock();updateTop20();updateCalendar();updatePortfolio();updateCorrelation();checkAlerts();currentData=[...STOCK_DATA];if(!filteredData.length)filteredData=[...STOCK_DATA];else applyFilters();const ts=META.timestamp||new Date().toLocaleString('en-BD',{timeZone:'Asia/Dhaka'});const ms=META.market_status||{};document.getElementById('lastUpdated').textContent='Live: '+ts+' | '+STOCK_DATA.length+' Stocks | BD: '+(ms.bd_time||'—');document.getElementById('pathBadge').textContent='PATH B — LIVE';document.getElementById('pathBadge').classList.remove('offline');startRefreshTimer();}catch(error){console.error('Load failed:',error);document.getElementById('pathBadge').textContent='PATH B — OFFLINE';document.getElementById('pathBadge').classList.add('offline');showToast('⚠️ Data unavailable. Scraper may be offline.','error');}}
-loadData();
+async function loadData() {
+  // Fetch with 10-second timeout to prevent infinite loading
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(DATA_URL + '?t=' + Date.now(), { cache: 'no-store', signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const data = await response.json();
+    STOCK_DATA = data.stocks || [];
+    SECTOR_DATA = data.sector_performance || [];
+    META = data.meta || {};
+    // Cache for offline fallback
+    localStorage.setItem('dse_cached_data', JSON.stringify(data));
+  } catch (e) {
+    clearTimeout(timeoutId);
+    console.error('Fetch failed:', e);
+    // Try cached data
+    const cached = localStorage.getItem('dse_cached_data');
+    if (cached) {
+      try {
+        const data = JSON.parse(cached);
+        STOCK_DATA = data.stocks || [];
+        SECTOR_DATA = data.sector_performance || [];
+        META = data.meta || {};
+        showToast('⚠️ Using cached data. Scraper offline.', 'error');
+      } catch (err) {
+        console.error('Cache parse failed:', err);
+      }
+    }
+  }
+  // Always update UI even if data is empty/stale
+  try { updateIndexBar(); } catch(e){}
+  try { updateMarketBadge(); } catch(e){}
+  try { updateBreadth(); } catch(e){}
+  try { updateNewHighLow(); } catch(e){}
+  try { updateMarketSummary(); } catch(e){}
+  try { updateSectorHeatmap(); } catch(e){}
+  try { updateNewsTicker(); } catch(e){}
+  try { updateForeignBlock(); } catch(e){}
+  try { updateTop20(); } catch(e){}
+  try { updateCalendar(); } catch(e){}
+  try { updatePortfolio(); } catch(e){}
+  try { updateCorrelation(); } catch(e){}
+  try { checkAlerts(); } catch(e){}
+  try { updateCharts(); } catch(e){}
+  currentData = [...STOCK_DATA];
+  if (!filteredData.length) filteredData = [...STOCK_DATA];
+  else applyFilters();
+  // Show status
+  const ts = META.timestamp || '—';
+  const ms = META.market_status || {};
+  const isStale = META.timestamp && ((Date.now() - new Date(META.timestamp).getTime()) > 86400000);
+  document.getElementById('lastUpdated').textContent = (isStale ? '⏰ STALE: ' : 'Live: ') + ts + ' | ' + STOCK_DATA.length + ' Stocks | BD: ' + (ms.bd_time || '—');
+  document.getElementById('pathBadge').textContent = 'PATH B — ' + (STOCK_DATA.length ? 'LIVE' : 'OFFLINE');
+  document.getElementById('pathBadge').classList.toggle('offline', !STOCK_DATA.length);
+  startRefreshTimer();
+}
 
-const formatNumber=(num)=>{if(!num&&num!==0)return'—';if(num>=1000000)return(num/1000000).toFixed(2)+'M';if(num>=1000)return(num/1000).toFixed(1)+'K';return num.toLocaleString();};
-const getChangeClass=(c)=>c>0?'gain':c<0?'loss':'neutral';
-const getBadgeClass=(c)=>c>0?'badge-gain':c<0?'badge-loss':'badge-neutral';
-const showToast=(msg,type='info')=>{const t=document.createElement('div');t.className='toast '+type;t.textContent=msg;document.getElementById('toastContainer').appendChild(t);setTimeout(()=>t.remove(),4000);};
+function renderStockTableFallback() {
+  // If no data at all, show a helpful message instead of infinite spinner
+  document.getElementById('marketSummary').innerHTML = '<div style="padding:30px;text-align:center"><div style="font-size:18px;margin-bottom:12px">⚠️ No Data Available</div><div style="color:var(--fg2);font-size:13px;margin-bottom:8px">The scraper is failing because DSEBD blocks non-Bangladesh IPs.</div><div style="color:var(--fg2);font-size:13px;margin-bottom:8px">Last successful scrape: June 21, 2026</div><div style="font-size:12px;color:var(--fg2)">To fix: Run <code>python scraper.py</code> on your PC in Bangladesh, then upload <code>dse_data.json</code> to GitHub.</div></div>';
+}
 
 function toggleTheme(){const body=document.body;const newTheme=body.getAttribute('data-theme')==='light'?'dark':'light';body.setAttribute('data-theme',newTheme);localStorage.setItem('dse_theme',newTheme);localStorage.setItem('dse_theme_manual','true');}
 const savedTheme=localStorage.getItem('dse_theme')||'dark';document.body.setAttribute('data-theme',savedTheme);
