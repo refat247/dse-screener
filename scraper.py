@@ -320,18 +320,44 @@ def compute_new_high_low(df):
 # CORRELATION MATRIX
 # ───────────────────────────────────────────────
 def compute_correlation(df):
-    """Compute correlation between stocks' change_pct"""
+    """Compute correlation between stocks using archive data if available"""
     try:
-        corr_data = df[['symbol', 'change_pct']].set_index('symbol').T
-        corr_matrix = corr_data.corr()
-        # Get top 5 correlations for each stock
+        archive_dir = "dse_archive"
+        if not os.path.exists(archive_dir):
+            return {"_message": "Need 7+ days of archive data for correlation. Run scraper daily to build history."}
+        
+        files = sorted(glob.glob(os.path.join(archive_dir, "*.json")))
+        if len(files) < 3:
+            return {"_message": f"Need 3+ days of data. Currently have {len(files)} day(s)."}
+        
+        # Build multi-day change_pct matrix
+        daily_changes = {}
+        for f in files[-10:]:  # Use last 10 days
+            try:
+                with open(f) as fp:
+                    data = json.load(fp)
+                    for s in data:
+                        sym = s['symbol']
+                        if sym not in daily_changes:
+                            daily_changes[sym] = []
+                        daily_changes[sym].append(s.get('change_pct', 0))
+            except:
+                continue
+        
+        # Build correlation matrix
+        import pandas as pd
+        corr_df = pd.DataFrame(daily_changes).fillna(0)
+        if corr_df.shape[0] < 2:
+            return {"_message": "Need more days with valid data."}
+        
+        corr_matrix = corr_df.corr()
         top_corr = {}
         for symbol in corr_matrix.columns:
             row = corr_matrix[symbol].drop(symbol).sort_values(ascending=False).head(5)
             top_corr[symbol] = [{'symbol': k, 'corr': round(v, 2)} for k, v in row.items()]
         return top_corr
-    except:
-        return {}
+    except Exception as e:
+        return {"_message": f"Correlation error: {str(e)}"}
 
 # ───────────────────────────────────────────────
 # BLOCK DEALS SCRAPER
@@ -478,7 +504,7 @@ def compute_support_resistance(df):
 # ───────────────────────────────────────────────
 # OUTPUT BUILDER
 # ───────────────────────────────────────────────
-def build_output(df, news, foreign, block_deals, top20, indices, market_status, ipo_agm, correlation):
+def build_output(df, news, foreign, block_deals, top20_scraped, indices, market_status, ipo_agm, correlation):
     advancing = len(df[df['change_pct'] > 0])
     declining = len(df[df['change_pct'] < 0])
     unchanged = len(df[df['change_pct'] == 0])
@@ -502,6 +528,20 @@ def build_output(df, news, foreign, block_deals, top20, indices, market_status, 
     # Market breadth: advance-decline ratio
     ad_ratio = round(advancing / declining, 2) if declining > 0 else float('inf')
     ad_ratio = None if ad_ratio == float('inf') else ad_ratio
+
+    # Compute TOP 20 from stock data (always reliable, fallback to scraped)
+    top20_computed = {
+        'top_gainers': top20_scraped.get('top_gainers', []) if top20_scraped.get('top_gainers') else df.nlargest(10, 'change_pct')[['symbol', 'ltp', 'change_pct', 'volume']].to_dict('records'),
+        'top_losers': top20_scraped.get('top_losers', []) if top20_scraped.get('top_losers') else df.nsmallest(10, 'change_pct')[['symbol', 'ltp', 'change_pct', 'volume']].to_dict('records'),
+        'most_active': top20_scraped.get('most_active', []) if top20_scraped.get('most_active') else df.nlargest(10, 'volume')[['symbol', 'ltp', 'change_pct', 'volume']].to_dict('records'),
+        'top_value': top20_scraped.get('top_value', []) if top20_scraped.get('top_value') else df.nlargest(10, 'value_mn')[['symbol', 'ltp', 'change_pct', 'volume']].to_dict('records')
+    }
+    # Ensure all top20 items have numeric fields
+    for key in top20_computed:
+        for item in top20_computed[key]:
+            for field in ['ltp', 'change_pct', 'volume']:
+                if field in item and item[field] is not None:
+                    item[field] = round(float(item[field]), 2) if field in ['ltp', 'change_pct'] else int(item[field])
 
     output = {
         'meta': {
@@ -527,7 +567,7 @@ def build_output(df, news, foreign, block_deals, top20, indices, market_status, 
             'market_status': market_status,
             'foreign': foreign,
             'block_deals': block_deals,
-            'top20': top20,
+            'top20': top20_computed,
             'news': news,
             'ipo_agm': ipo_agm,
             'correlation': correlation
