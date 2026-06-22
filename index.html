@@ -346,7 +346,25 @@ const savedTheme=localStorage.getItem('dse_theme')||'dark';document.body.setAttr
 
 function updateIndexBar(){const idx=META.indices||{};document.getElementById('dsexValue').textContent=idx.DSEX?idx.DSEX.toLocaleString():'—';document.getElementById('dsexChange').textContent=idx.DSEX_change?(idx.DSEX_change>0?'+':'')+idx.DSEX_change+'%':'—';document.getElementById('dsexChange').className='index-change '+getChangeClass(idx.DSEX_change||0);document.getElementById('ds30Value').textContent=idx.DS30?idx.DS30.toLocaleString():'—';document.getElementById('ds30Change').textContent=idx.DS30_change?(idx.DS30_change>0?'+':'')+idx.DS30_change+'%':'—';document.getElementById('ds30Change').className='index-change '+getChangeClass(idx.DS30_change||0);document.getElementById('dsesValue').textContent=idx.DSES?idx.DSES.toLocaleString():'—';document.getElementById('dsesChange').textContent=idx.DSES_change?(idx.DSES_change>0?'+':'')+idx.DSES_change+'%':'—';document.getElementById('dsesChange').className='index-change '+getChangeClass(idx.DSES_change||0);}
 
-function updateMarketBadge(){const ms=META.market_status||{};const badge=document.getElementById('marketBadge');if(ms.status==='OPEN'){badge.textContent='MARKET OPEN';badge.className='market-badge open';}else{badge.textContent='MARKET CLOSED';badge.className='market-badge closed';}}
+function updateMarketBadge() {
+  const now = new Date();
+  const bdTime = new Date(now.getTime() + (6 * 60 * 60 * 1000));
+  const bdHour = bdTime.getUTCHours();
+  const bdMinute = bdTime.getUTCMinutes();
+  const bdTimeStr = bdHour.toString().padStart(2, '0') + ':' + bdMinute.toString().padStart(2, '0');
+  const bdWeekday = bdTime.getUTCDay();
+  const isTradingDay = [0, 1, 2, 3, 4].includes(bdWeekday);
+  const isMarketHours = bdTimeStr >= '10:00' && bdTimeStr <= '14:30';
+  const status = (isTradingDay && isMarketHours) ? 'OPEN' : 'CLOSED';
+  const badge = document.getElementById('marketBadge');
+  if (status === 'OPEN') {
+    badge.textContent = 'MARKET OPEN';
+    badge.className = 'market-badge open';
+  } else {
+    badge.textContent = 'MARKET CLOSED';
+    badge.className = 'market-badge closed';
+  }
+}
 
 function updateBreadth(){const adv=META.advancing||0;const dec=META.declining||0;const total=adv+dec;const ratio=META.ad_ratio||(dec>0?(adv/dec).toFixed(2):'—');document.getElementById('breadthAdv').textContent=adv;document.getElementById('breadthDec').textContent=dec;document.getElementById('breadthRatio').textContent='A/D: '+ratio;if(total>0){const pct=(adv/total)*100;document.getElementById('breadthFill').style.width=pct+'%';document.getElementById('breadthFill').style.background=pct>50?'var(--gain)':pct<50?'var(--loss)':'var(--neutral)';}}
 
