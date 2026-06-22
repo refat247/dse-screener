@@ -300,7 +300,7 @@ def scrape_ipo_agm():
                     except:
                         continue
     except Exception as e:
-        print(f"[{datetime.now().strftime('%H:%M:%S'))}] WARN dividend scrape failed: {e}")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] WARN dividend scrape failed: {e}")
     
     return sorted(events, key=lambda x: x['date'])[:15]
 
