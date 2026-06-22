@@ -378,33 +378,62 @@ function updateSectorHeatmap(){const c=document.getElementById('sectorHeatmap');
 
 function updateNewsTicker(){const items=META.news||[];if(!items.length){document.getElementById('newsItems').textContent='No news available';return;}document.getElementById('newsItems').innerHTML=items.map(n=>'<span class="news-item"><span class="news-date">'+n.date+'</span>'+n.title+'<span class="news-cat">'+n.category+'</span></span>').join('');}
 
-function updateForeignBlock(){
-const f=META.foreign||{};
-const hasData = (f.buy_value_mn > 0) || (f.sell_value_mn > 0) || (f.top_buy && f.top_buy.length) || (f.top_sell && f.top_sell.length);
-const noDataHtml = '<div class="info-panel-title">🌍 Foreign Investor Activity</div><div class="info-row"><span class="info-label" style="color:var(--fg2)">Foreign data unavailable. DSEBD may not provide this data or page structure changed.</span></div><div class="info-row"><span class="info-label" style="color:var(--fg2);font-size:11px">Tip: This data is only available if DSEBD publishes a foreign trading page. The scraper tries to fetch it automatically.</span></div>';
-if(!hasData){
-  const fb=document.getElementById('foreignPanel');
-  if(fb) fb.innerHTML = noDataHtml;
-  return;
-}
-document.getElementById('foreignBuy').textContent='৳'+(f.buy_value_mn?f.buy_value_mn.toFixed(1):'0')+'M';
-document.getElementById('foreignSell').textContent='৳'+(f.sell_value_mn?f.sell_value_mn.toFixed(1):'0')+'M';
-const net=f.net_value_mn||0;
-document.getElementById('foreignNet').textContent=(net>=0?'+':'')+'৳'+net.toFixed(1)+'M';
-document.getElementById('foreignNet').className='info-val '+(net>=0?'gain':'loss');
-document.getElementById('foreignTopBuy').textContent=f.top_buy&&f.top_buy[0]?f.top_buy[0].symbol:'—';
-document.getElementById('foreignTopSell').textContent=f.top_sell&&f.top_sell[0]?f.top_sell[0].symbol:'—';
-const bd=META.block_deals||[];
-const bc=document.getElementById('blockDealsContent');
-if(!bd.length)bc.innerHTML='<div class="info-row"><span class="info-label">No block deals today</span></div>';
-else bc.innerHTML=bd.slice(0,5).map(d=>'<div class="info-row"><span class="info-label">'+d.symbol+'</span><span class="info-val">'+formatNumber(d.volume)+' @ ৳'+d.price+'</span></div>').join('');
-const nc=META.near_circuit||[];
-const cc=document.getElementById('circuitContent');
-if(!nc.length)cc.innerHTML='<div class="info-row"><span class="info-label">None near circuit</span></div>';
-else cc.innerHTML=nc.map(s=>'<div class="info-row"><span class="info-label">'+s.symbol+'</span><span class="info-val '+(s.change_pct>0?'gain':'loss')+'">'+(s.change_pct>0?'+':'')+s.change_pct+'% ('+s.circuit_proximity_pct+'%)</span></div>').join('');
+function updateForeignBlock() {
+  const f = META.foreign || {};
+  const hasData = (f.buy_value_mn > 0) || (f.sell_value_mn > 0) || (f.top_buy && f.top_buy.length) || (f.top_sell && f.top_sell.length);
+  if (!hasData) {
+    const fb = document.getElementById('foreignPanel');
+    if (fb) fb.innerHTML = '<div class="info-panel-title">🌍 Foreign Investor Activity</div><div class="info-row"><span class="info-label" style="color:var(--fg2)">Foreign data unavailable. DSEBD may not provide this data or page structure changed.</span></div><div class="info-row"><span class="info-label" style="color:var(--fg2);font-size:11px">Tip: This data is only available if DSEBD publishes a foreign trading page. The scraper tries to fetch it automatically.</span></div>';
+  } else {
+    document.getElementById('foreignBuy').textContent = '৳' + (f.buy_value_mn ? f.buy_value_mn.toFixed(1) : '0') + 'M';
+    document.getElementById('foreignSell').textContent = '৳' + (f.sell_value_mn ? f.sell_value_mn.toFixed(1) : '0') + 'M';
+    const net = f.net_value_mn || 0;
+    document.getElementById('foreignNet').textContent = (net >= 0 ? '+' : '') + '৳' + net.toFixed(1) + 'M';
+    document.getElementById('foreignNet').className = 'info-val ' + (net >= 0 ? 'gain' : 'loss');
+    document.getElementById('foreignTopBuy').textContent = f.top_buy && f.top_buy[0] ? f.top_buy[0].symbol : '—';
+    document.getElementById('foreignTopSell').textContent = f.top_sell && f.top_sell[0] ? f.top_sell[0].symbol : '—';
+  }
+  // Always update block deals and near circuit (from main stock data, not foreign scraper)
+  const bd = META.block_deals || [];
+  const bc = document.getElementById('blockDealsContent');
+  if (!bd.length) bc.innerHTML = '<div class="info-row"><span class="info-label">No block deals today</span></div>';
+  else bc.innerHTML = bd.slice(0, 5).map(d => '<div class="info-row"><span class="info-label">' + d.symbol + '</span><span class="info-val">' + formatNumber(d.volume) + ' @ ৳' + d.price + '</span></div>').join('');
+  const nc = META.near_circuit || [];
+  const cc = document.getElementById('circuitContent');
+  if (!nc.length) cc.innerHTML = '<div class="info-row"><span class="info-label">None near circuit</span></div>';
+  else cc.innerHTML = nc.map(s => '<div class="info-row"><span class="info-label">' + s.symbol + '</span><span class="info-val ' + (s.change_pct > 0 ? 'gain' : 'loss') + '">' + (s.change_pct > 0 ? '+' : '') + s.change_pct + '% (' + s.circuit_proximity_pct + '%)</span></div>').join('');
 }
 
-function updateTop20(){const t20=META.top20||{};const g=t20.top_gainers||[],l=t20.top_losers||[],v=t20.most_active||[],val=t20.top_value||[];document.getElementById('top20Grid').innerHTML=[{title:'🚀 Top Gainers',items:g,key:'change_pct'},{title:'💥 Top Losers',items:l,key:'change_pct'},{title:'📊 Most Active (Vol)',items:v,key:'volume'},{title:'💰 Most Active (Value)',items:val,key:'value_mn'}].map(sec=>'<div class="top20-card"><div class="top20-card-title">'+sec.title+'</div>'+sec.items.map((it,i)=>'<div class="top20-item"><span><span class="top20-rank">'+(i+1)+'.</span> <span class="symbol" style="cursor:pointer" onclick="showStockDetail(\''+it.symbol+'\')">'+it.symbol+'</span></span><span class="'+(it.change_pct>0?'gain':it.change_pct<0?'loss':'neutral')+'">'+(it.change_pct>0?'+':'')+(it.change_pct?it.change_pct.toFixed(2):'0')+'%</span></div>').join('')+'</div>').join('');}
+function updateTop20() {
+  let t20 = META.top20 || {};
+  // Fallback: compute from stock data if server data is empty
+  let g = t20.top_gainers || [];
+  let l = t20.top_losers || [];
+  let v = t20.most_active || [];
+  let val = t20.top_value || [];
+  if (!g.length && STOCK_DATA.length) {
+    g = [...STOCK_DATA].sort((a,b) => b.change_pct - a.change_pct).slice(0,10).map(s => ({symbol: s.symbol, ltp: s.ltp, change_pct: s.change_pct, volume: s.volume}));
+  }
+  if (!l.length && STOCK_DATA.length) {
+    l = [...STOCK_DATA].sort((a,b) => a.change_pct - b.change_pct).slice(0,10).map(s => ({symbol: s.symbol, ltp: s.ltp, change_pct: s.change_pct, volume: s.volume}));
+  }
+  if (!v.length && STOCK_DATA.length) {
+    v = [...STOCK_DATA].sort((a,b) => b.volume - a.volume).slice(0,10).map(s => ({symbol: s.symbol, ltp: s.ltp, change_pct: s.change_pct, volume: s.volume}));
+  }
+  if (!val.length && STOCK_DATA.length) {
+    val = [...STOCK_DATA].sort((a,b) => b.value_mn - a.value_mn).slice(0,10).map(s => ({symbol: s.symbol, ltp: s.ltp, change_pct: s.change_pct, volume: s.volume}));
+  }
+  const sections = [
+    {title: '🚀 Top Gainers', items: g, key: 'change_pct'},
+    {title: '💥 Top Losers', items: l, key: 'change_pct'},
+    {title: '📊 Most Active (Vol)', items: v, key: 'volume'},
+    {title: '💰 Most Active (Value)', items: val, key: 'value_mn'}
+  ];
+  document.getElementById('top20Grid').innerHTML = sections.map(sec => {
+    if (!sec.items.length) return '<div class="top20-card"><div class="top20-card-title">' + sec.title + '</div><div style="padding:10px;color:var(--fg2);font-size:12px">No data</div></div>';
+    return '<div class="top20-card"><div class="top20-card-title">' + sec.title + '</div>' + sec.items.map((it, i) => '<div class="top20-item"><span><span class="top20-rank">' + (i+1) + '.</span> <span class="symbol" style="cursor:pointer" onclick="showStockDetail(\'' + it.symbol + '\')">' + it.symbol + '</span></span><span class="' + (it.change_pct > 0 ? 'gain' : it.change_pct < 0 ? 'loss' : 'neutral') + '">' + (it.change_pct > 0 ? '+' : '') + (it.change_pct ? it.change_pct.toFixed(2) : '0') + '%</span></div>').join('') + '</div>';
+  }).join('');
+}
 
 function updateCalendar() {
   const events = META.ipo_agm || [];
