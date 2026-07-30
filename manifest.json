@@ -2,7 +2,7 @@
   "name": "DSEX Pro Screener",
   "short_name": "DSEX Pro",
   "description": "Bangladesh Stock Exchange Live Screener & Analytics",
-  "start_url": "./dse_screener_path_b.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
