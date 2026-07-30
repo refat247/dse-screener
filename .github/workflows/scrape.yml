@@ -17,6 +17,7 @@ permissions:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
     - name: Checkout repo
@@ -31,8 +32,15 @@ jobs:
       run: |
         pip install beautifulsoup4 pandas numpy requests lxml
         
-    - name: Run scraper
-      run: python scraper.py
+    - name: Run scraper once
+      run: |
+        set +e
+        timeout 8m python scraper.py
+        code=$?
+        set -e
+        if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then
+          exit "$code"
+        fi
       env:
         GITHUB_ACTIONS: 'true'
         
