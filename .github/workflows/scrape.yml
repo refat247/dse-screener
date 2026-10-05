@@ -14,6 +14,11 @@ on:
 permissions:
   contents: write
 
+# Never let two scrapes overlap and race on git push
+concurrency:
+  group: dse-scrape
+  cancel-in-progress: false
+
 jobs:
   scrape:
     runs-on: ubuntu-latest

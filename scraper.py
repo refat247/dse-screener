@@ -10,7 +10,6 @@ from bs4 import BeautifulSoup
 import json
 import pandas as pd
 import numpy as np
-import schedule
 import time
 from datetime import datetime, timedelta
 import warnings
@@ -653,6 +652,12 @@ def main():
     print("  Extras: News | Foreign | Block Deals | Top 20 | Volume Spike | Gap | Circuit")
     print("=" * 60)
     job()
+    # In GitHub Actions the workflow's cron is the scheduler: run once and exit.
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        print("\n✅ Single run complete (GitHub Actions mode)")
+        return
+    # Local continuous mode only — 'schedule' is not needed in CI.
+    import schedule
     schedule.every(REFRESH_INTERVAL).minutes.do(job)
     print("\n⏰ Running... Press Ctrl+C to stop")
     while True:
